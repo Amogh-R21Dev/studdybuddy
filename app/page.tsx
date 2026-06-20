@@ -1,3 +1,4 @@
+import AnimatedBackground from "./AnimatedBackground";
 export default function Home() {
   return (
     <main
@@ -13,7 +14,7 @@ export default function Home() {
         overflow: "hidden",
       }}
     >
-      <div className="glow" />
+    <AnimatedBackground />
 
       <div className="fade-up" style={{ position: "relative", zIndex: 1 }}>
         <p
