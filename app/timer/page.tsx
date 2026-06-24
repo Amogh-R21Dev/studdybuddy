@@ -1,4 +1,4 @@
-"use client";097865ewa
+"use client";
 
 import { useEffect, useState } from "react";
 
@@ -129,4 +129,4 @@ export default function Timer() {
       </div>
     </main>
   );
-}ojkmh 
+}
