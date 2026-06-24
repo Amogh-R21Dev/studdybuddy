@@ -1,7 +1,8 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
+import { createClient } from "./lib/supabase";
 
 const links = [
   { href: "/", label: "Home" },
@@ -15,6 +16,13 @@ const links = [
 
 export default function Sidebar() {
   const pathname = usePathname();
+  const router = useRouter();
+  const supabase = createClient();
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/login");
+  }
 
   return (
     <aside
@@ -29,33 +37,54 @@ export default function Sidebar() {
         zIndex: 10,
         backgroundColor: "rgba(15, 20, 25, 0.85)",
         backdropFilter: "blur(6px)",
+        display: "flex",
+        flexDirection: "column",
+        justifyContent: "space-between",
       }}
     >
-      <div style={{ fontFamily: "Georgia, serif", fontSize: "19px", marginBottom: "32px", paddingLeft: "10px" }}>
-        StudyBuddy
+      <div>
+        <div style={{ fontFamily: "Georgia, serif", fontSize: "19px", marginBottom: "32px", paddingLeft: "10px" }}>
+          StudyBuddy
+        </div>
+
+        <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
+          {links.map((link) => {
+            const active = pathname === link.href;
+            return (
+              <Link
+                key={link.href}
+                href={link.href}
+                style={{
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  fontSize: "14px",
+                  textDecoration: "none",
+                  color: active ? "var(--accent)" : "var(--text-muted)",
+                  backgroundColor: active ? "var(--accent-soft)" : "transparent",
+                }}
+              >
+                {link.label}
+              </Link>
+            );
+          })}
+        </nav>
       </div>
 
-      <nav style={{ display: "flex", flexDirection: "column", gap: "4px" }}>
-        {links.map((link) => {
-          const active = pathname === link.href;
-          return (
-            <Link
-              key={link.href}
-              href={link.href}
-              style={{
-                padding: "10px 12px",
-                borderRadius: "8px",
-                fontSize: "14px",
-                textDecoration: "none",
-                color: active ? "var(--accent)" : "var(--text-muted)",
-                backgroundColor: active ? "var(--accent-soft)" : "transparent",
-              }}
-            >
-              {link.label}
-            </Link>
-          );
-        })}
-      </nav>
+      <button
+        onClick={handleLogout}
+        style={{
+          padding: "10px 12px",
+          borderRadius: "8px",
+          fontSize: "14px",
+          color: "var(--text-muted)",
+          backgroundColor: "transparent",
+          border: "1px solid var(--border)",
+          cursor: "pointer",
+          textAlign: "left",
+        }}
+      >
+        Log out
+      </button>
     </aside>
   );
 }
