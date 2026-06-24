@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
-import Nav from "./Nav";
+import Sidebar from "./Sidebar";
 
 export const metadata: Metadata = {
   title: "StudyBuddy",
@@ -14,9 +14,9 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>
-        <Nav />
-        {children}
+      <body style={{ display: "flex" }}>
+        <Sidebar />
+        <div style={{ flex: 1, position: "relative" }}>{children}</div>
       </body>
     </html>
   );
