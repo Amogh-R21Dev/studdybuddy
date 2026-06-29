@@ -29,11 +29,16 @@ export default function Chat() {
     setMessages((prev) => [...prev, { role: "user", text: userMessage }]);
     setLoading(true);
 
+    const history = messages.map((m) => ({
+      role: m.role,
+      content: m.text,
+    }));
+
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: userMessage }),
+        body: JSON.stringify({ message: userMessage, history }),
       });
       const data = await res.json();
       setMessages((prev) => [...prev, { role: "assistant", text: data.reply }]);
@@ -59,7 +64,7 @@ export default function Chat() {
       <div style={{ padding: "28px 0 16px", borderBottom: "1px solid var(--border)" }}>
         <h1 style={{ fontSize: "22px", margin: 0 }}>Assistant</h1>
         <p style={{ color: "var(--text-muted)", fontSize: "13px", margin: "4px 0 0" }}>
-          Ask anything — powered by Claude once connected
+          Powered by Claude — ask anything
         </p>
       </div>
 
@@ -76,6 +81,7 @@ export default function Chat() {
                 fontSize: "15px",
                 lineHeight: 1.5,
                 border: msg.role === "assistant" ? "1px solid var(--border)" : "none",
+                whiteSpace: "pre-wrap",
               }}
             >
               {msg.text}
@@ -98,7 +104,7 @@ export default function Chat() {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={handleKey}
-          placeholder="Ask something..."
+          placeholder="Ask something... (Enter to send)"
           rows={1}
           style={{
             flex: 1,
