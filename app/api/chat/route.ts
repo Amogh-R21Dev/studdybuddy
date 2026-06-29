@@ -2,13 +2,17 @@ import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
   try {
-    const { message } = await req.json();
+    const { message, history } = await req.json();
 
     const messages = [
       {
         role: "system",
         content: `You are StudyBuddy's assistant — a focused, calm, and helpful AI built into a learning app. Keep answers clear and concise.`,
       },
+      ...(history || []).map((m: { role: string; text: string }) => ({
+        role: m.role,
+        content: m.text,
+      })),
       { role: "user", content: message },
     ];
 
@@ -19,9 +23,9 @@ export async function POST(req: NextRequest) {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({
-       model: "llama-3.3-70b-versatile",
+        model: "llama-3.3-70b-versatile",
         messages,
-        max_tokens: 1024,
+        max_tokens: 4096,
       }),
     });
 
