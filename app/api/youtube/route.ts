@@ -9,17 +9,16 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "Not authenticated" }, { status: 401 });
     }
 
-    const response = await fetch(
-      "https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=10",
+    const subResponse = await fetch(
+      "https://www.googleapis.com/youtube/v3/subscriptions?part=snippet&mine=true&maxResults=20",
       {
-        headers: {
-          Authorization: `Bearer ${session.accessToken}`,
-        },
+        headers: { Authorization: `Bearer ${session.accessToken}` },
       }
     );
+    const subData = await subResponse.json();
+    const subscriptions = subData.items || [];
 
-    const data = await response.json();
-    return NextResponse.json({ subscriptions: data.items || [] });
+    return NextResponse.json({ subscriptions, videos: [] });
 
   } catch (error) {
     console.error("YouTube API error:", error);

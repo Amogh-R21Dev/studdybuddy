@@ -4,10 +4,21 @@ import { useState } from "react";
 import { signIn, signOut, useSession } from "next-auth/react";
 import AnimatedBackground from "../AnimatedBackground";
 
+type Subscription = {
+  snippet: {
+    title: string;
+    description: string;
+    thumbnails: { default: { url: string } };
+    resourceId: { channelId: string };
+  };
+};
+
 export default function Dashboard() {
   const { data: session } = useSession();
-  const [subscriptions, setSubscriptions] = useState<any[]>([]);
+  const [subscriptions, setSubscriptions] = useState<Subscription[]>([]);
+  const [summary, setSummary] = useState("");
   const [loading, setLoading] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
   const [fetched, setFetched] = useState(false);
 
   async function fetchSubscriptions() {
@@ -15,23 +26,56 @@ export default function Dashboard() {
     try {
       const res = await fetch("/api/youtube");
       const data = await res.json();
-      setSubscriptions(data.subscriptions || []);
-      setFetched(true);
-    } catch {
-      console.error("Failed to fetch subscriptions");
+      if (data.error) {
+        console.error(data.error);
+      } else {
+        setSubscriptions(data.subscriptions || []);
+        setFetched(true);
+      }
+    } catch (err) {
+      console.error("Failed to fetch:", err);
     }
     setLoading(false);
   }
 
+  async function summarizeFeed() {
+    if (subscriptions.length === 0) return;
+    setSummarizing(true);
+    setSummary("");
+
+    const channelList = subscriptions
+      .map((s) => s.snippet?.title)
+      .filter(Boolean)
+      .join(", ");
+
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: `I am subscribed to these YouTube channels: ${channelList}. 
+Based on these channels, give me a brief digest summary organized by topic (Tech, News, Education, Entertainment etc). 
+For each topic, mention which channels likely cover it and what kind of content I can expect. 
+Keep it concise and useful.`,
+        }),
+      });
+      const data = await res.json();
+      setSummary(data.reply || "");
+    } catch (err) {
+      console.error("Summarize failed:", err);
+    }
+    setSummarizing(false);
+  }
+
   return (
-    <main style={{ position: "relative", maxWidth: "640px", margin: "0 auto", padding: "60px 24px" }}>
+    <main style={{ position: "relative", maxWidth: "680px", margin: "0 auto", padding: "60px 24px" }}>
       <AnimatedBackground intensity="calm" />
 
       <div style={{ position: "relative", zIndex: 1 }}>
         <div className="fade-up">
           <h1 style={{ fontSize: "30px", marginBottom: "8px" }}>Your Digest</h1>
           <p style={{ color: "var(--text-muted)", marginBottom: "36px" }}>
-            Connect your YouTube account to see your personalized feed summary.
+            Connect your YouTube account to get a personalized feed summary.
           </p>
         </div>
 
@@ -47,18 +91,17 @@ export default function Dashboard() {
               fontSize: "15px",
               fontWeight: 600,
               cursor: "pointer",
-              marginBottom: "24px",
             }}
           >
             Connect YouTube
           </button>
         ) : (
-          <div style={{ marginBottom: "24px" }}>
-            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "12px" }}>
+          <div>
+            <p style={{ color: "var(--text-muted)", fontSize: "14px", marginBottom: "20px" }}>
               Connected as <strong style={{ color: "var(--text)" }}>{session.user?.email}</strong>
             </p>
 
-            <div style={{ display: "flex", gap: "12px", marginBottom: "24px" }}>
+            <div style={{ display: "flex", gap: "12px", marginBottom: "32px", flexWrap: "wrap" }}>
               <button
                 onClick={fetchSubscriptions}
                 disabled={loading}
@@ -76,6 +119,25 @@ export default function Dashboard() {
                 {loading ? "Loading..." : "Load My Subscriptions"}
               </button>
 
+              {fetched && subscriptions.length > 0 && (
+                <button
+                  onClick={summarizeFeed}
+                  disabled={summarizing}
+                  style={{
+                    padding: "12px 24px",
+                    backgroundColor: "var(--sage)",
+                    color: "var(--text)",
+                    border: "none",
+                    borderRadius: "999px",
+                    fontSize: "14px",
+                    fontWeight: 600,
+                    cursor: summarizing ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {summarizing ? "Summarizing..." : "Summarize My Feed ✨"}
+                </button>
+              )}
+
               <button
                 onClick={() => signOut()}
                 style={{
@@ -92,42 +154,72 @@ export default function Dashboard() {
               </button>
             </div>
 
+            {summary && (
+              <div
+                style={{
+                  border: "1px solid var(--accent)",
+                  borderRadius: "14px",
+                  padding: "24px",
+                  backgroundColor: "var(--bg-elevated)",
+                  marginBottom: "28px",
+                  whiteSpace: "pre-wrap",
+                  lineHeight: 1.7,
+                  fontSize: "15px",
+                }}
+              >
+                <p style={{ color: "var(--accent)", fontSize: "12px", letterSpacing: "0.1em", textTransform: "uppercase", marginBottom: "12px" }}>
+                  AI Digest Summary
+                </p>
+                {summary}
+              </div>
+            )}
+
             {fetched && subscriptions.length === 0 && (
               <p style={{ color: "var(--text-muted)" }}>No subscriptions found.</p>
             )}
 
-            <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
-              {subscriptions.map((sub, i) => (
-                <div
-                  key={i}
-                  className="fade-up"
-                  style={{
-                    border: "1px solid var(--border)",
-                    borderRadius: "14px",
-                    padding: "16px",
-                    backgroundColor: "var(--bg-elevated)",
-                    display: "flex",
-                    alignItems: "center",
-                    gap: "14px",
-                    animationDelay: `${i * 0.05}s`,
-                  }}
-                >
-                  {sub.snippet?.thumbnails?.default?.url && (
-                    <img
-                      src={sub.snippet.thumbnails.default.url}
-                      alt={sub.snippet.title}
-                      style={{ width: "40px", height: "40px", borderRadius: "50%" }}
-                    />
-                  )}
-                  <div>
-                    <strong style={{ fontSize: "14px" }}>{sub.snippet?.title}</strong>
-                    <p style={{ color: "var(--text-muted)", fontSize: "13px", margin: "3px 0 0" }}>
-                      {sub.snippet?.description?.slice(0, 80) || "No description"}
-                    </p>
-                  </div>
+            {subscriptions.length > 0 && (
+              <>
+                <h2 style={{ fontSize: "18px", marginBottom: "16px" }}>
+                  Your Subscriptions ({subscriptions.length})
+                </h2>
+                <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+                  {subscriptions.map((sub, i) => (
+                    <div
+                      key={i}
+                      className="fade-up"
+                      style={{
+                        border: "1px solid var(--border)",
+                        borderRadius: "12px",
+                        padding: "14px 16px",
+                        backgroundColor: "var(--bg-elevated)",
+                        display: "flex",
+                        alignItems: "center",
+                        gap: "14px",
+                        animationDelay: `${i * 0.03}s`,
+                      }}
+                    >
+                      {sub.snippet?.thumbnails?.default?.url && (
+                        <img
+                          src={sub.snippet.thumbnails.default.url}
+                          alt={sub.snippet.title}
+                          style={{ width: "36px", height: "36px", borderRadius: "50%", flexShrink: 0 }}
+                        />
+                      )}
+                      <div>
+                        <strong style={{ fontSize: "14px" }}>{sub.snippet?.title}</strong>
+                        {sub.snippet?.description && (
+                          <p style={{ color: "var(--text-muted)", fontSize: "12px", margin: "2px 0 0" }}>
+                            {sub.snippet.description.slice(0, 80)}
+                            {sub.snippet.description.length > 80 ? "..." : ""}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              </>
+            )}
           </div>
         )}
       </div>
