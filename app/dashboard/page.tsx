@@ -164,34 +164,60 @@ Keep it concise and useful.`,
                 </button>
               </div>
 
-              {searchResults.length > 0 && (
+        {searchResults.length > 0 && (
                 <div style={{ display: "flex", flexDirection: "column", gap: "8px", marginTop: "12px" }}>
-                  {searchResults.map((result, i) => (
-                    <button
-                      key={i}
-                      onClick={() => router.push(`/channel/${result.snippet?.channelId || result.id?.channelId}`)}
-                      style={{
-                        border: "1px solid var(--border)",
-                        borderRadius: "10px",
-                        padding: "10px 14px",
-                        backgroundColor: "var(--bg-elevated)",
-                        display: "flex",
-                        alignItems: "center",
-                        gap: "12px",
-                        cursor: "pointer",
-                        textAlign: "left",
-                      }}
-                    >
-                      {result.snippet?.thumbnails?.default?.url && (
-                        <img
-                          src={result.snippet.thumbnails.default.url}
-                          alt={result.snippet.title}
-                          style={{ width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0 }}
-                        />
-                      )}
-                      <span style={{ fontSize: "14px", color: "var(--text)" }}>{result.snippet?.title}</span>
-                    </button>
-                  ))}
+                  {searchResults.map((result, i) => {
+                    const thumbUrl = result.snippet?.thumbnails?.default?.url
+                      || result.snippet?.thumbnails?.medium?.url
+                      || result.snippet?.thumbnails?.high?.url;
+                    const channelId = result.snippet?.channelId || result.id?.channelId;
+                    const title = result.snippet?.title || result.snippet?.channelTitle || "Unknown channel";
+
+                    return (
+                      <button
+                        key={i}
+                        onClick={() => router.push(`/channel/${channelId}`)}
+                        style={{
+                          border: "1px solid var(--border)",
+                          borderRadius: "10px",
+                          padding: "10px 14px",
+                          backgroundColor: "var(--bg-elevated)",
+                          display: "flex",
+                          alignItems: "center",
+                          gap: "12px",
+                          cursor: "pointer",
+                          textAlign: "left",
+                        }}
+                      >
+                        {thumbUrl ? (
+                          <img
+                            src={thumbUrl}
+                            alt={title}
+                            style={{ width: "32px", height: "32px", borderRadius: "50%", flexShrink: 0, objectFit: "cover" }}
+                          />
+                        ) : (
+                          <div
+                            style={{
+                              width: "32px",
+                              height: "32px",
+                              borderRadius: "50%",
+                              flexShrink: 0,
+                              backgroundColor: "var(--accent-soft)",
+                              color: "var(--accent)",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              fontSize: "13px",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {title.charAt(0).toUpperCase()}
+                          </div>
+                        )}
+                        <span style={{ fontSize: "14px", color: "var(--text)" }}>{title}</span>
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>
