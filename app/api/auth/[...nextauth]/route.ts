@@ -1,6 +1,37 @@
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 
+async function refreshAccessToken(token: any) {
+  try {
+    const response = await fetch("https://oauth2.googleapis.com/token", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: process.env.GOOGLE_CLIENT_ID!,
+        client_secret: process.env.GOOGLE_CLIENT_SECRET!,
+        grant_type: "refresh_token",
+        refresh_token: token.refreshToken,
+      }),
+    });
+
+    const refreshedTokens = await response.json();
+
+    if (!response.ok) {
+      throw refreshedTokens;
+    }
+
+    return {
+      ...token,
+      accessToken: refreshedTokens.access_token,
+      accessTokenExpires: Date.now() + refreshedTokens.expires_in * 1000,
+      refreshToken: refreshedTokens.refresh_token ?? token.refreshToken,
+    };
+  } catch (error) {
+    console.error("Error refreshing access token:", error);
+    return { ...token, error: "RefreshAccessTokenError" };
+  }
+}
+
 export const authOptions = {
   providers: [
     GoogleProvider({
@@ -17,13 +48,27 @@ export const authOptions = {
   ],
   callbacks: {
     async jwt({ token, account }: any) {
+      // First login — save tokens
       if (account) {
-        token.accessToken = account.access_token;
+        return {
+          ...token,
+          accessToken: account.access_token,
+          accessTokenExpires: Date.now() + account.expires_in * 1000,
+          refreshToken: account.refresh_token,
+        };
       }
-      return token;
+
+      // Token still valid — reuse it
+      if (Date.now() < token.accessTokenExpires) {
+        return token;
+      }
+
+      // Token expired — refresh it
+      return refreshAccessToken(token);
     },
     async session({ session, token }: any) {
-      session.accessToken = token.accessToken as string;
+      session.accessToken = token.accessToken;
+      session.error = token.error;
       return session;
     },
   },
