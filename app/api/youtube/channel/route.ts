@@ -11,6 +11,19 @@ function parseDuration(duration: string): number {
   return hours * 3600 + minutes * 60 + seconds;
 }
 
+async function fetchVideoBatch(channelId: string, headers: any, pageToken?: string) {
+  const url = new URL("https://www.googleapis.com/youtube/v3/search");
+  url.searchParams.set("part", "snippet");
+  url.searchParams.set("channelId", channelId);
+  url.searchParams.set("maxResults", "50");
+  url.searchParams.set("order", "date");
+  url.searchParams.set("type", "video");
+  if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+  const res = await fetch(url.toString(), { headers });
+  return res.json();
+}
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions) as any;
@@ -35,43 +48,48 @@ export async function GET(req: NextRequest) {
     const channelData = await channelRes.json();
     const channelInfo = channelData.items?.[0] || null;
 
-    const searchRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/search?part=snippet&channelId=${channelId}&maxResults=25&order=date&type=video`,
-      { headers }
-    );
-    const searchData = await searchRes.json();
-    const items = searchData.items || [];
-
-    const videoIds = items.map((v: any) => v.id?.videoId).filter(Boolean).join(",");
-
-    if (!videoIds) {
-      return NextResponse.json({ channel: channelInfo, videos: [], shorts: [] });
+    let allItems: any[] = [];
+    let pageToken: string | undefined = undefined;
+    for (let i = 0; i < 3; i++) {
+      const batch = await fetchVideoBatch(channelId, headers, pageToken);
+      allItems = allItems.concat(batch.items || []);
+      pageToken = batch.nextPageToken;
+      if (!pageToken) break;
     }
 
-    const detailsRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${videoIds}`,
-      { headers }
-    );
-    const detailsData = await detailsRes.json();
-    const details = detailsData.items || [];
+    const videoIds = allItems.map((v: any) => v.id?.videoId).filter(Boolean);
+
+    if (videoIds.length === 0) {
+      return NextResponse.json({ channel: channelInfo, videos: [], shorts: [] });
+    }
 
     const videos: any[] = [];
     const shorts: any[] = [];
 
-    for (const video of details) {
-      const seconds = parseDuration(video.contentDetails?.duration || "");
-      const item = {
-        id: video.id,
-        title: video.snippet?.title,
-        thumbnail: video.snippet?.thumbnails?.medium?.url,
-        publishedAt: video.snippet?.publishedAt,
-        viewCount: video.statistics?.viewCount,
-        duration: seconds,
-      };
-      if (seconds > 0 && seconds <= 60) {
-        shorts.push(item);
-      } else {
-        videos.push(item);
+    for (let i = 0; i < videoIds.length; i += 50) {
+      const idBatch = videoIds.slice(i, i + 50).join(",");
+      const detailsRes = await fetch(
+        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${idBatch}`,
+        { headers }
+      );
+      const detailsData = await detailsRes.json();
+      const details = detailsData.items || [];
+
+      for (const video of details) {
+        const seconds = parseDuration(video.contentDetails?.duration || "");
+        const item = {
+          id: video.id,
+          title: video.snippet?.title,
+          thumbnail: video.snippet?.thumbnails?.medium?.url,
+          publishedAt: video.snippet?.publishedAt,
+          viewCount: video.statistics?.viewCount,
+          duration: seconds,
+        };
+        if (seconds > 0 && seconds <= 60) {
+          shorts.push(item);
+        } else {
+          videos.push(item);
+        }
       }
     }
 
