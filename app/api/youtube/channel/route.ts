@@ -1,6 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "../../auth/[...nextauth]/route";
+import { createServerClient } from "../../../lib/supabase-server";
+
+const CACHE_HOURS = 3;
 
 function parseDuration(duration: string): number {
   const match = duration.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
@@ -9,6 +12,77 @@ function parseDuration(duration: string): number {
   const minutes = parseInt(match[2] || "0");
   const seconds = parseInt(match[3] || "0");
   return hours * 3600 + minutes * 60 + seconds;
+}
+
+async function fetchFreshChannelData(channelId: string, accessToken: string) {
+  const headers = { Authorization: `Bearer ${accessToken}` };
+
+  const channelRes = await fetch(
+    `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${channelId}`,
+    { headers }
+  );
+  const channelData = await channelRes.json();
+  const channelInfo = channelData.items?.[0] || null;
+  const uploadsPlaylistId = channelInfo?.contentDetails?.relatedPlaylists?.uploads;
+
+  if (!uploadsPlaylistId) {
+    return { channel: channelInfo, videos: [], shorts: [] };
+  }
+
+  let allVideoIds: string[] = [];
+  let pageToken: string | undefined = undefined;
+
+  for (let i = 0; i < 3; i++) {
+    const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
+    url.searchParams.set("part", "contentDetails");
+    url.searchParams.set("playlistId", uploadsPlaylistId);
+    url.searchParams.set("maxResults", "50");
+    if (pageToken) url.searchParams.set("pageToken", pageToken);
+
+    const res = await fetch(url.toString(), { headers });
+    const data = await res.json();
+
+    const ids = (data.items || []).map((item: any) => item.contentDetails?.videoId).filter(Boolean);
+    allVideoIds = allVideoIds.concat(ids);
+    pageToken = data.nextPageToken;
+    if (!pageToken) break;
+  }
+
+  if (allVideoIds.length === 0) {
+    return { channel: channelInfo, videos: [], shorts: [] };
+  }
+
+  const videos: any[] = [];
+  const shorts: any[] = [];
+
+  for (let i = 0; i < allVideoIds.length; i += 50) {
+    const idBatch = allVideoIds.slice(i, i + 50).join(",");
+    const detailsRes = await fetch(
+      `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${idBatch}`,
+      { headers }
+    );
+    const detailsData = await detailsRes.json();
+    const details = detailsData.items || [];
+
+    for (const video of details) {
+      const seconds = parseDuration(video.contentDetails?.duration || "");
+      const item = {
+        id: video.id,
+        title: video.snippet?.title,
+        thumbnail: video.snippet?.thumbnails?.medium?.url,
+        publishedAt: video.snippet?.publishedAt,
+        viewCount: video.statistics?.viewCount,
+        duration: seconds,
+      };
+      if (seconds > 0 && seconds <= 60) {
+        shorts.push(item);
+      } else {
+        videos.push(item);
+      }
+    }
+  }
+
+  return { channel: channelInfo, videos, shorts };
 }
 
 export async function GET(req: NextRequest) {
@@ -26,74 +100,32 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ error: "No channelId provided" }, { status: 400 });
     }
 
-    const headers = { Authorization: `Bearer ${session.accessToken}` };
+    const supabase = createServerClient();
 
-    const channelRes = await fetch(
-      `https://www.googleapis.com/youtube/v3/channels?part=snippet,statistics,contentDetails&id=${channelId}`,
-      { headers }
-    );
-    const channelData = await channelRes.json();
-    const channelInfo = channelData.items?.[0] || null;
-    const uploadsPlaylistId = channelInfo?.contentDetails?.relatedPlaylists?.uploads;
+    const { data: cached } = await supabase
+      .from("channel_cache")
+      .select("data, updated_at")
+      .eq("channel_id", channelId)
+      .single();
 
-    if (!uploadsPlaylistId) {
-      return NextResponse.json({ channel: channelInfo, videos: [], shorts: [] });
-    }
-
-    let allVideoIds: string[] = [];
-    let pageToken: string | undefined = undefined;
-
-    for (let i = 0; i < 3; i++) {
-      const url = new URL("https://www.googleapis.com/youtube/v3/playlistItems");
-      url.searchParams.set("part", "contentDetails");
-      url.searchParams.set("playlistId", uploadsPlaylistId);
-      url.searchParams.set("maxResults", "50");
-      if (pageToken) url.searchParams.set("pageToken", pageToken);
-
-      const res = await fetch(url.toString(), { headers });
-      const data = await res.json();
-
-      const ids = (data.items || []).map((item: any) => item.contentDetails?.videoId).filter(Boolean);
-      allVideoIds = allVideoIds.concat(ids);
-      pageToken = data.nextPageToken;
-      if (!pageToken) break;
-    }
-
-    if (allVideoIds.length === 0) {
-      return NextResponse.json({ channel: channelInfo, videos: [], shorts: [] });
-    }
-
-    const videos: any[] = [];
-    const shorts: any[] = [];
-
-    for (let i = 0; i < allVideoIds.length; i += 50) {
-      const idBatch = allVideoIds.slice(i, i + 50).join(",");
-      const detailsRes = await fetch(
-        `https://www.googleapis.com/youtube/v3/videos?part=contentDetails,snippet,statistics&id=${idBatch}`,
-        { headers }
-      );
-      const detailsData = await detailsRes.json();
-      const details = detailsData.items || [];
-
-      for (const video of details) {
-        const seconds = parseDuration(video.contentDetails?.duration || "");
-        const item = {
-          id: video.id,
-          title: video.snippet?.title,
-          thumbnail: video.snippet?.thumbnails?.medium?.url,
-          publishedAt: video.snippet?.publishedAt,
-          viewCount: video.statistics?.viewCount,
-          duration: seconds,
-        };
-        if (seconds > 0 && seconds <= 60) {
-          shorts.push(item);
-        } else {
-          videos.push(item);
-        }
+    if (cached) {
+      const ageHours = (Date.now() - new Date(cached.updated_at).getTime()) / (1000 * 60 * 60);
+      if (ageHours < CACHE_HOURS) {
+        return NextResponse.json({ ...cached.data, fromCache: true });
       }
     }
 
-    return NextResponse.json({ channel: channelInfo, videos, shorts });
+    const fresh = await fetchFreshChannelData(channelId, session.accessToken);
+
+    await supabase
+      .from("channel_cache")
+      .upsert({
+        channel_id: channelId,
+        data: fresh,
+        updated_at: new Date().toISOString(),
+      });
+
+    return NextResponse.json({ ...fresh, fromCache: false });
 
   } catch (error) {
     console.error("YouTube channel error:", error);
